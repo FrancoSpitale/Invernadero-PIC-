@@ -1,0 +1,276 @@
+#include <16f877.h>
+#DEVICE ADC=10 //ADC usa 10 bit
+#FUSES NOWDT,HS, NOPROTECT,NOLVP,NODEBUG, BROWNOUT,NOCPD, NOWRT,NOPUT
+#USE DELAY(clock=20000000)
+#use RS232(BAUD=4800,BITS=8,XMIT=PIN_C6,RCV=PIN_C7,stop=2,BRGH1OK,)
+#use standard_io(c)
+#include <lcd.c>
+#define mem PIN_C3 //pulsador para grabar en eeprom
+#define read PIN_C4 //pulsador para leer memoria eeprom
+#define mas PIN_C5 //pulsador para subir posiciones en la lectura de memoria
+#define direccion PIN_D4
+#define habilitacion PIN_C2
+#define pulso PIN_C1
+#define cooler PIN_D5
+int memoria=0;
+int lectura=0;
+float temperatura;
+int m1=0;
+int m2=0;
+int r1=0;
+int r2=0;
+int numero=0;
+int cm=0;
+int cr=0;
+int contador=0;
+int hola=0;
+int cont_motor_cerrar=0;
+int cont_motor_abrir=0;
+int maxima=40;
+int intermedia=30;
+int minima=20;
+int pasos=14;
+int tecla=0;
+int seteo=0;
+
+INT_AD //interrupción del ADC, se activa cuando esta lista la conversión.
+AD_isr()
+
+{
+Set_ADC_Channel(1); //especifico el canal para la conversión.
+delay_us(1);
+temperatura=Read_ADC(ADC_READ_ONLY); //lee el ultimo resultado.
+temperatura=100*temperatura/1000;
+delay_ms(1);
+Read_ADC(ADC_START_ONLY); //inicia nueva conversion.
+}
+
+void main()
+
+{
+set_tris_d(0x00);
+set_tris_b(0x00);
+set_tris_e(0x00);
+
+lcd_init();
+Setup_ADC_Ports(RA0_RA1_ANALOG_RA3_REF); //configuro como analogica la ra0, la ra1 y la ra3 como referencia
+
+Setup_ADC(ADC_CLOCK_DIV_32);
+enable_interrupts(INT_AD);
+enable_interrupts(GLOBAL);
+delay_us(1);
+Read_ADC(ADC_START_ONLY);
+
+while(1)
+{
+if(input(mem))
+{
+delay_ms(20);
+if(input(mem))
+{
+m1=temperatura; //casteo la parte entera de la medición de ph para guardarlo en memoria ya que la eeprom es de 8 bit
+m2=(temperatura - m1)*10; //tomo la parte decimal de la medición de ph y lo grabo en la siguiente posición de memoria
+m2=m2+1;
+write_eeprom(cm,m1); //grabo parte entera
+memoria++;
+cm++;
+write_eeprom(cm,m2); //grabo parte decimal
+cm++; //contador para grabar datos en la eeprom
+memoria++; //contador para mostrar el numero de la medición en pantalla
+
+Lcd_putc ("\f"); //limpio pantalla
+
+  r1=read_eeprom(lectura); //leo en eeprom parte entera de la medición
+  delay_ms(1);
+  lectura++;
+  r2=read_eeprom(lectura); //leo en eeprom parte decimal de la medición
+  delay_ms(1);
+  lectura++;
+  printf(lcd_putc,"memoria %i %i.%i",numero,r1,r2); //muestro en LCD reconstruyendo la medición
+  numero++;
+
+     while(input(mem)) //while que me permite mantener fija la medición a grabar en eeprom
+     {
+     delay_ms(1);
+     }
+     
+     Lcd_putc ("\f");
+
+
+        if(numero==5) //cuando se completa la memoria vuelve a cero la cuenta y se graba en la primer posición
+        {
+        cm=0;
+        numero=0;
+        lectura=0;
+        }
+  }
+}
+
+  while(input(read))
+  {
+     
+       if(input(mas))
+           {   
+              delay_ms(20);
+                 
+                 Lcd_putc ("\f");
+
+                 
+                 while(input(mas)) //while infinito para que el usuario suelte el pulsador
+                 {
+                 delay_ms(1);
+                 }
+                          
+              contador+=2;
+              cr++; //contador de lectura de memoria
+                               
+                  
+           }      
+if(contador==0)
+{
+hola=contador;
+hola++;
+r1 = read_eeprom(contador);
+r2 = read_eeprom(hola);
+
+                    if (cr==5)
+                    {
+                    contador=0;
+                    cr=0;
+                    }
+                    lcd_gotoxy(1,1);
+
+                    printf(lcd_putc,"memoria %i  %i.%i ",cr,r1,r2);
+             
+                   }
+     }
+cr=0;
+
+lcd_gotoxy(1,1);
+delay_ms(1000);
+printf(lcd_putc,"Temperatura:%.1f",temperatura);
+
+if(input(mas))
+{
+seteo = 1;
+
+     if(seteo)
+     {
+     
+     
+     printf("Ingrese el tipo de planta a cultivar\n");
+     printf("f = Frutilla\n t = Tomate\n l = Lechuga\n ");
+
+
+      delay_ms(1);
+      tecla = getc();
+      delay_ms(1);
+      putc(tecla);
+      seteo=0;
+      
+
+     }
+  }
+if(tecla == 102)// f en ascii
+{
+printf("Usted va a cultivar frutilla\n");
+tecla=0;
+maxima=22;
+minima=13;
+intermedia=18;
+
+}
+
+if(tecla == 116)// f en ascii
+{
+printf("Usted va a cultivar Tomate\n");
+tecla=0;
+maxima=27;
+minima=13;
+intermedia=20;
+
+}
+
+if(tecla == 108)// f en ascii
+{
+printf("Usted va a cultivar Lechuga\n");
+tecla=0;
+maxima=30;
+minima=18;
+intermedia=24;
+
+}
+
+/////////////////////////////////////seccion de control del motor////////////////////////////////////////
+
+                                if(temperatura >= intermedia )
+                                   
+                                  {
+                                    output_bit(direccion, 1);
+                                    output_bit(habilitacion, 0);
+                                    
+                                    
+                                    while(cont_motor_abrir< pasos) 
+                                      
+                                      {
+                                    output_bit(pulso,1);
+                                    delay_ms(500);
+                                    output_bit(pulso,0);
+                                    delay_ms(500); 
+                                    
+                                    cont_motor_abrir++;
+                                    
+                                                                                                      
+                                   
+                                      }                            
+                                    cont_motor_cerrar=0; 
+                                  }
+                                  
+                                  
+                                  if(temperatura >= maxima )
+                                   
+                                  {
+                                    
+                                    output_bit(cooler, 1);
+                                                                                             
+                                    
+                                  }
+                                  
+                                  
+                                  if(temperatura <= intermedia  )
+                                   
+                                  {
+                                    
+                                    output_bit(cooler, 0);
+                                                                                             
+                                    
+                                  }
+                                  if(temperatura<= minima)
+                                  {
+                                    
+                                    
+                                    if(cont_motor_abrir=pasos)
+                                    {
+                                         
+                                     output_bit(direccion, 0);
+                                     output_bit(habilitacion, 0);
+                                         
+                                         while(cont_motor_cerrar< pasos)
+                                      
+                                         {
+                                    
+                                            output_bit(pulso,1);
+                                            delay_ms(500);
+                                            output_bit(pulso,0);
+                                            delay_ms(500); 
+                                    
+                                            cont_motor_cerrar++;   
+                                  
+                                  
+                                         }
+                                    }
+                                    cont_motor_abrir=0;
+                                    output_bit(habilitacion, 1);
+                                  }
+}
+}
